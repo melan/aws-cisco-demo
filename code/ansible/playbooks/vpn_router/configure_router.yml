@@ -1,0 +1,18 @@
+---
+- hosts: vpn_router
+  connection: network_cli
+  remote_user: ec2-user
+  vars:
+    ansible_network_os: ios
+  tasks:
+    - name: get current version
+      ios_command:
+        commands: show version
+      register: ios_version
+
+    - debug: msg="{{ ios_version.stdout }}"
+
+    - name: configure router
+      ios_config:
+        src: templates/cisco_config.j2
+        backup: no

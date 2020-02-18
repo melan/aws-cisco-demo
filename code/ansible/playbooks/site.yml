@@ -1,0 +1,2 @@
+---
+- import_playbook: vpn_router/configure_router.yml

@@ -1,0 +1,61 @@
+crypto isakmp keepalive 10 10
+crypto ipsec security-association replay window-size 256
+crypto ipsec df-bit clear
+!
+crypto isakmp policy 200
+  encryption aes 256
+  hash sha256
+  authentication pre-share
+  group 14
+  lifetime 28800
+!
+{%  for vpn in vpns %}
+crypto keyring keyring-{{ vpn.vpn_id }}
+  local-address {{ local_address }}
+  pre-shared-key address {{ vpn.remote_address }} key {{ vpn.preshared_key }}
+!
+crypto isakmp profile isakmp-{{ vpn.vpn_id }}
+  keyring keyring-{{ vpn.vpn_id }}
+  match identity address {{ vpn.remote_address }} 255.255.255.255
+  local-address {{ local_address }}
+!
+crypto ipsec transform-set ipsec-prop-{{ vpn.vpn_id }} esp-aes 256 esp-sha256-hmac
+  mode tunnel
+!
+crypto ipsec profile ipsec-{{ vpn.vpn_id }}
+  set transform-set ipsec-prop-{{ vpn.vpn_id }}
+  set pfs group14
+!
+interface Tunnel{{ loop.index * 10 }}
+  ip address {{ vpn.in_tunnel_router }} 255.255.255.252
+  ip tcp adjust-mss 1379
+  tunnel source {{ local_address }}
+  tunnel mode ipsec ipv4
+  tunnel destination {{ vpn.remote_address }}
+  tunnel protection ipsec profile ipsec-{{ vpn.vpn_id }}
+  ip virtual-reassembly
+!
+ip route {{ vpn.remote_address }} 255.255.255.255 {{ default_gw }}
+!
+{% endfor %}
+!
+router bgp {{ router_asn }}
+ bgp log-neighbor-changes
+{% for vpn in vpns %}
+ neighbor {{ vpn.in_tunnel_neighbor }} remote-as {{ vpn.asn }}
+ neighbor {{ vpn.in_tunnel_neighbor }} timers 10 30 30
+{% endfor %}
+ !
+ address-family ipv4
+  redistribute static
+{% for vpn in vpns %}
+  neighbor {{ vpn.in_tunnel_neighbor }} activate
+  neighbor {{ vpn.in_tunnel_neighbor }} soft-reconfiguration inbound
+  neighbor {{ vpn.in_tunnel_neighbor }} route-map ADVERTISE_TO_NEIGHBOR out
+{% endfor %}
+ exit-address-family
+!
+ip prefix-list EXCLUDE_ADVERTISE_ADDRESS seq 999 permit {{ private_address_space.cidr }} le 32
+route-map ADVERTISE_TO_NEIGHBOR permit 10
+  match ip address prefix-list EXCLUDE_ADVERTISE_ADDRESS
+!
